@@ -87,23 +87,21 @@ std::vector<double> NeuralNetwork::predict(DataInstance instance) {
         nodes[inputNodeIds[i]]->preActivationValue = instance.x[i];
     }
 
-    // Use layers when available (file-loaded networks); BFS fallback otherwise
+    // Forward pass: for file-loaded networks, node IDs are assigned sequentially
+    // by layer in loadNetwork, so simple ID-order iteration is topological order.
+    // For manually-built networks without layers, use BFS.
     if (!layers.empty()) {
-        for (size_t l = 0; l < layers.size(); l++) {
-            for (size_t n = 0; n < layers[l].size(); n++) {
-                int nodeId = layers[l][n];
-                visitPredictNode(nodeId);
-                for (auto& pair : adjacencyList[nodeId]) {
-                    visitPredictNeighbor(pair.second);
-                }
+        for (int i = 0; i < size; i++) {
+            visitPredictNode(i);
+            for (auto it = adjacencyList[i].begin(); it != adjacencyList[i].end(); ++it) {
+                visitPredictNeighbor(it->second);
             }
         }
     } else {
-        // BFS topological sort for manually-built networks
         std::vector<int> inDegree(size, 0);
         for (int i = 0; i < size; i++) {
-            for (auto& pair : adjacencyList[i]) {
-                inDegree[pair.second.dest]++;
+            for (auto it = adjacencyList[i].begin(); it != adjacencyList[i].end(); ++it) {
+                inDegree[it->second.dest]++;
             }
         }
         std::queue<int> q;
@@ -117,11 +115,11 @@ std::vector<double> NeuralNetwork::predict(DataInstance instance) {
             if (visited[nodeId]) continue;
             visited[nodeId] = true;
             visitPredictNode(nodeId);
-            for (auto& pair : adjacencyList[nodeId]) {
-                visitPredictNeighbor(pair.second);
-                inDegree[pair.second.dest]--;
-                if (inDegree[pair.second.dest] == 0) {
-                    q.push(pair.second.dest);
+            for (auto it = adjacencyList[nodeId].begin(); it != adjacencyList[nodeId].end(); ++it) {
+                visitPredictNeighbor(it->second);
+                inDegree[it->second.dest]--;
+                if (inDegree[it->second.dest] == 0) {
+                    q.push(it->second.dest);
                 }
             }
         }
