@@ -81,32 +81,25 @@ Graph::Graph() {
 }
 
 Graph::Graph(int sz) {
-    size = sz;
-    nodes.resize(size);
-    adjacencyList.resize(size);
-    for (int i = 0; i < size; i++) {
-        nodes[i] = new NodeInfo();
-    }
+    size = 0;
+    resize(sz);
 }
 
 Graph::Graph(const Graph& other) {
-    size = other.size;
-    nodes.resize(size);
-    adjacencyList.resize(size);
-    for (int i = 0; i < size; i++) {
-        nodes[i] = new NodeInfo(*(other.nodes[i]));
-    }
-    adjacencyList = other.adjacencyList;
+    size = 0;
+    *this = other;
 }
 
 Graph& Graph::operator=(const Graph& other) {
     if (this != &other) {
         clear();
         size = other.size;
-        nodes.resize(size);
-        adjacencyList.resize(size);
+        nodes.assign(size, nullptr);
+        adjacencyList.assign(size, std::unordered_map<int, Connection>());
         for (int i = 0; i < size; i++) {
-            nodes[i] = new NodeInfo(*(other.nodes[i]));
+            if (other.nodes[i] != nullptr) {
+                nodes[i] = new NodeInfo(*(other.nodes[i]));
+            }
         }
         adjacencyList = other.adjacencyList;
     }
@@ -117,21 +110,26 @@ Graph::~Graph() {
     clear();
 }
 
+// Allocates a NodeInfo object on the heap and stores it at index id.
 void Graph::updateNode(int id, NodeInfo n) {
-    if (id >= 0 && id < size) {
-        *(nodes[id]) = n;
+    if (id >= 0 && id < (int)nodes.size()) {
+        if (nodes[id] != nullptr) {
+            delete nodes[id];
+        }
+        nodes[id] = new NodeInfo(n);
     }
 }
 
 NodeInfo* Graph::getNode(int id) const {
-    if (id >= 0 && id < size) {
+    if (id >= 0 && id < (int)nodes.size()) {
         return nodes[id];
     }
     return nullptr;
 }
 
+// Adds/updates a directed weighted edge from v to u.
 void Graph::updateConnection(int v, int u, double w) {
-    if (v >= 0 && v < size && u >= 0 && u < size) {
+    if (v >= 0 && v < (int)adjacencyList.size() && u >= 0) {
         adjacencyList[v][u] = Connection(v, u, w);
     }
 }
@@ -146,26 +144,32 @@ std::vector<NodeInfo*> Graph::getNodes() const {
 
 void Graph::clear() {
     for (int i = 0; i < (int)nodes.size(); i++) {
-        delete nodes[i];
+        if (nodes[i] != nullptr) {
+            delete nodes[i];
+            nodes[i] = nullptr;
+        }
     }
     nodes.clear();
     adjacencyList.clear();
     size = 0;
 }
 
+// resize initializes nodes to a vector of `sz` nullptrs and adjacencyList
+// to a vector of `sz` empty maps.
 void Graph::resize(int sz) {
     clear();
     size = sz;
-    nodes.resize(size);
-    adjacencyList.resize(size);
-    for (int i = 0; i < size; i++) {
-        nodes[i] = new NodeInfo();
-    }
+    nodes.assign(size, nullptr);
+    adjacencyList.assign(size, std::unordered_map<int, Connection>());
 }
 
 std::ostream& operator<<(std::ostream& out, const Graph& g) {
-    for (int i = 0; i < g.size; i++) {
-        out << "Node " << i << ": " << *(g.nodes[i]) << std::endl;
+    for (int i = 0; i < (int)g.nodes.size(); i++) {
+        out << "Node " << i << ": ";
+        if (g.nodes[i] != nullptr) {
+            out << *(g.nodes[i]);
+        }
+        out << std::endl;
         for (auto& pair : g.adjacencyList[i]) {
             out << "\t-> " << pair.second << std::endl;
         }
