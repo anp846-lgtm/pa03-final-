@@ -1,37 +1,24 @@
 #include "Graph.hpp"
+using namespace std;
 
-// ==================== NodeInfo ====================
+// NodeInfo -----------------------------------------------------------------------------------------------------------------------------------
 
 NodeInfo::NodeInfo() {
-    activationFunction = identity;
-    activationDerivative = identity_prime;
     preActivationValue = 0;
-    postActivationValue = 0;
     bias = 0;
+    activationFunction = identity;
+    activationDerivative = identity;
+    activate();
     delta = 0;
 }
 
-NodeInfo::NodeInfo(std::string activationFunc, double value, double b) {
-    activationFunction = getActivationFunction(activationFunc);
-    activationDerivative = getActivationDerivative(activationFunc);
-    preActivationValue = value;
-    postActivationValue = activationFunction(value);
-    bias = b;
-    delta = 0;
-}
-
-bool NodeInfo::operator==(const NodeInfo& other) {
-    return (activationFunction == other.activationFunction &&
-            abs(preActivationValue - other.preActivationValue) < 0.00001 &&
-            abs(postActivationValue - other.postActivationValue) < 0.00001 &&
-            abs(bias - other.bias) < 0.00001);
-}
-
-std::ostream& operator<<(std::ostream& out, const NodeInfo& n) {
-    out << getActivationIdentifier(n.activationFunction)
-        << " " << n.preActivationValue
-        << " " << n.bias;
-    return out;
+NodeInfo::NodeInfo(string activationFunction, double value, double bias) {
+    this->activationFunction = getActivationFunction(activationFunction);
+    this->activationDerivative = getActivationDerivative(activationFunction);
+    this->preActivationValue = value;
+    this->activate();
+    this->bias = bias;
+    this->delta = 0;
 }
 
 double NodeInfo::activate() {
@@ -43,65 +30,146 @@ double NodeInfo::derive() {
     return activationDerivative(preActivationValue);
 }
 
-// ==================== Connection ====================
-
-Connection::Connection() {
-    source = 0;
-    dest = 0;
-    weight = 0;
-    delta = 0;
+bool NodeInfo::operator==(const NodeInfo& other) {
+    return (this->preActivationValue == other.preActivationValue) && 
+           (this->postActivationValue == other.postActivationValue) && 
+           (this->activationFunction == other.activationFunction) &&
+           (this->bias == other.bias) &&
+           (this->activationDerivative == other.activationDerivative);
 }
 
-Connection::Connection(int s, int d, double w) {
-    source = s;
-    dest = d;
-    weight = w;
-    delta = 0;
-}
-
-bool Connection::operator<(const Connection& other) {
-    return dest < other.dest;
-}
-
-bool Connection::operator==(const Connection& other) {
-    return (source == other.source &&
-            dest == other.dest &&
-            abs(weight - other.weight) < 0.00001);
-}
-
-std::ostream& operator<<(std::ostream& out, const Connection& c) {
-    out << c.source << " " << c.dest << " " << c.weight;
+std::ostream& operator<<(std::ostream& out, const NodeInfo& n) {
+    out << "bias: " << n.bias << 
+           " preActivationValue: " << n.preActivationValue << 
+           " postActivationValue: " << n.postActivationValue << 
+           " activationFunction: " << getActivationIdentifier(n.activationFunction) <<
+           " activationDerivative: " << getActivationIdentifier(n.activationDerivative) << endl;
     return out;
 }
 
-// ==================== Graph ====================
+// Connection -----------------------------------------------------------------------------------------------------------------------------------
 
-Graph::Graph() {
+Connection::Connection() {
+    this->source = -1;
+    this->dest = -1;
+    this->weight = 0;
+    this->delta = 0;
+}
+
+Connection::Connection(int source, int dest, double weight) {
+    this->source = source;
+    this->dest = dest;
+    this->weight = weight;
+    this->delta = 0;
+}
+
+bool Connection::operator<(const Connection& other) {
+    return this->dest < other.dest;
+}
+
+bool Connection::operator==(const Connection& other) {
+    return (this->dest == other.dest) && 
+           (this->source == other.source) && 
+           (this->weight == other.weight);
+}
+
+std::ostream& operator<<(std::ostream& out, const Connection& c) {
+    out << "source: " << c.source << 
+           " dest: " << c.dest << 
+           " weight: " << c.weight << endl;
+    return out;
+}
+
+
+
+// ------------------------ YOU DO NOT NEED TO MODIFY THE CODE ABOVE (but feel free to explore it) --------------------------------------
+
+
+
+
+// Graph -----------------------------------------------------------------------------------------------------------------------------------
+
+// STUDENT TODO: IMPLEMENT
+void Graph::updateNode(int id, NodeInfo n) {
+    if (id < 0 || id >= nodes.size()) {
+        cout << "Attempting to update node with id: " << id << " but node does not exist" << endl;
+        return;
+    }
+
+    delete nodes.at(id);
+    nodes.at(id) = new NodeInfo(n);
+}
+
+// STUDENT TODO: IMPLEMENT
+NodeInfo* Graph::getNode(int id) const {
+    if (id < 0 || id >= nodes.size()) {
+        return nullptr;
+    }
+    return nodes.at(id);
+}
+
+// STUDENT TODO: IMPLEMENT
+void Graph::updateConnection(int v, int u, double w) {
+    if (v < 0 || v >= nodes.size()) {
+        cerr << "Attempting to update connection between " << v << " and " << u << " with weight " << w << " but " << v << " does not exist" << endl;
+        exit(1);
+    }
+    if (u < 0 || u >= nodes.size()) {
+        cerr << "Attempting to update connection between " << v << " and " << u << " with weight " << w << " but " << u << " does not exist" << endl;
+        exit(1);
+    }
+
+    if (adjacencyList.at(v).find(u) != adjacencyList.at(v).end()) {
+        adjacencyList.at(v).at(u).weight = w;
+    } else {
+        adjacencyList.at(v).insert({u, Connection(v, u, w)});
+    }
+}
+
+// STUDENT TODO: IMPLEMENT
+void Graph::clear() {
+    for (int i = 0; i < nodes.size(); i++) {
+        delete nodes.at(i);
+    }
+    nodes.clear();
+    adjacencyList.clear();
     size = 0;
 }
 
-Graph::Graph(int sz) {
-    size = 0;
-    resize(sz);
+
+
+
+// ------------------------ YOU DO NOT NEED TO MODIFY THE REMAINING CODE (but please feel free to explore it!) --------------------------------------
+
+
+
+
+
+Graph::Graph() {
+    this->size = 0;
+}
+
+Graph::Graph(int size) {
+    resize(size);
 }
 
 Graph::Graph(const Graph& other) {
-    size = 0;
-    *this = other;
+    this->size = other.size;
+    this->adjacencyList = other.adjacencyList;
+    for (int i = 0; i < other.nodes.size(); i++) {
+        nodes.push_back(new NodeInfo(*other.nodes.at(i)));
+    }
 }
 
 Graph& Graph::operator=(const Graph& other) {
-    if (this != &other) {
-        clear();
-        size = other.size;
-        nodes.assign(size, nullptr);
-        adjacencyList.assign(size, std::unordered_map<int, Connection>());
-        for (int i = 0; i < size; i++) {
-            if (other.nodes[i] != nullptr) {
-                nodes[i] = new NodeInfo(*(other.nodes[i]));
-            }
-        }
-        adjacencyList = other.adjacencyList;
+    if (this == &other) {
+        return *this;
+    }
+    clear();
+    this->size = other.size;
+    this->adjacencyList = other.adjacencyList;
+    for (int i = 0; i < other.nodes.size(); i++) {
+        nodes.push_back(new NodeInfo(*other.nodes.at(i)));
     }
     return *this;
 }
@@ -110,69 +178,44 @@ Graph::~Graph() {
     clear();
 }
 
-// Allocates a NodeInfo object on the heap and stores it at index id.
-void Graph::updateNode(int id, NodeInfo n) {
-    if (id >= 0 && id < (int)nodes.size()) {
-        if (nodes[id] != nullptr) {
-            delete nodes[id];
-        }
-        nodes[id] = new NodeInfo(n);
-    }
-}
-
-NodeInfo* Graph::getNode(int id) const {
-    if (id >= 0 && id < (int)nodes.size()) {
-        return nodes[id];
-    }
-    return nullptr;
-}
-
-// Adds/updates a directed weighted edge from v to u.
-void Graph::updateConnection(int v, int u, double w) {
-    if (v >= 0 && v < (int)adjacencyList.size() && u >= 0) {
-        adjacencyList[v][u] = Connection(v, u, w);
-    }
-}
-
 AdjList& Graph::getAdjacencyList() {
     return adjacencyList;
 }
 
-std::vector<NodeInfo*> Graph::getNodes() const {
-    return nodes;
-}
-
-void Graph::clear() {
-    for (int i = 0; i < (int)nodes.size(); i++) {
-        if (nodes[i] != nullptr) {
-            delete nodes[i];
-            nodes[i] = nullptr;
+ostream& operator<<(ostream& out, const Graph& g) {
+    // output as dot format for graph visualization
+    out << "digraph G {" << endl;
+    for (int i = 0; i < g.adjacencyList.size(); i++) {
+        for (auto j = g.adjacencyList.at(i).begin(); j != g.adjacencyList.at(i).end(); j++) {
+            out << "\t" << i << " -> " << j->second.dest << "[label=\"" << j->second.weight << "\"]" << endl;
         }
     }
-    nodes.clear();
-    adjacencyList.clear();
-    size = 0;
-}
-
-// resize initializes nodes to a vector of `sz` nullptrs and adjacencyList
-// to a vector of `sz` empty maps.
-void Graph::resize(int sz) {
-    clear();
-    size = sz;
-    nodes.assign(size, nullptr);
-    adjacencyList.assign(size, std::unordered_map<int, Connection>());
-}
-
-std::ostream& operator<<(std::ostream& out, const Graph& g) {
-    for (int i = 0; i < (int)g.nodes.size(); i++) {
-        out << "Node " << i << ": ";
-        if (g.nodes[i] != nullptr) {
-            out << *(g.nodes[i]);
+    out << "}" << endl;
+    for (int i = 0; i < g.nodes.size(); i++) {
+        string end = "\n";
+        if (i == g.nodes.size()-1) {
+            end = "";
         }
-        out << std::endl;
-        for (auto& pair : g.adjacencyList[i]) {
-            out << "\t-> " << pair.second << std::endl;
-        }
+        out << "node " << i 
+            << ": (z=" << g.nodes.at(i)->preActivationValue << "\t"\
+            << ", a=" << g.nodes.at(i)->postActivationValue << "\t"
+            << ", bias=" << g.nodes.at(i)->bias << "\t"
+            << ", activation=" << getActivationIdentifier(g.nodes.at(i)->activationFunction) << ")" << end;
     }
+
+    // take the console output starting from digraph G {...} (to the last bracket) and paste it here: 
+    // https://dreampuf.github.io/GraphvizOnline/#digraph%20G%20%7B%0A%0A%20%20subgraph%20cluster_0%20%7B%0A%20%20%20%20style%3Dfilled%3B%0A%20%20%20%20color%3Dlightgrey%3B%0A%20%20%20%20node%20%5Bstyle%3Dfilled%2Ccolor%3Dwhite%5D%3B%0A%20%20%20%20a0%20-%3E%20a1%20-%3E%20a2%20-%3E%20a3%3B%0A%20%20%20%20label%20%3D%20%22process%20%231%22%3B%0A%20%20%7D%0A%0A%20%20subgraph%20cluster_1%20%7B%0A%20%20%20%20node%20%5Bstyle%3Dfilled%5D%3B%0A%20%20%20%20b0%20-%3E%20b1%20-%3E%20b2%20-%3E%20b3%3B%0A%20%20%20%20label%20%3D%20%22process%20%232%22%3B%0A%20%20%20%20color%3Dblue%0A%20%20%7D%0A%20%20start%20-%3E%20a0%3B%0A%20%20start%20-%3E%20b0%3B%0A%20%20a1%20-%3E%20b3%3B%0A%20%20b2%20-%3E%20a3%3B%0A%20%20a3%20-%3E%20a0%3B%0A%20%20a3%20-%3E%20end%3B%0A%20%20b3%20-%3E%20end%3B%0A%0A%20%20start%20%5Bshape%3DMdiamond%5D%3B%0A%20%20end%20%5Bshape%3DMsquare%5D%3B%0A%7D
     return out;
+}
+
+void Graph::resize(int size) {
+    this->size = size;
+    adjacencyList.resize(size);
+    for (int i = 0; i < size; i++) {
+        nodes.push_back(nullptr);
+    }
+}
+
+vector<NodeInfo*> Graph::getNodes() const {
+    return nodes;
 }

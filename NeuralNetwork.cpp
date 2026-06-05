@@ -1,402 +1,542 @@
+// includes
 #include "NeuralNetwork.hpp"
 #include "Trace.hpp"
-#include <algorithm>
-#include <iomanip>
-#include <queue>
-#include <sstream>
-#include <string>
-#include <vector>
+using namespace std;
 
-// ==================== Constructors ====================
 
-NeuralNetwork::NeuralNetwork() : Graph() {
+
+// NeuralNetwork -----------------------------------------------------------------------------------------------------------------------------------
+
+// STUDENT TODO: IMPLEMENT
+void NeuralNetwork::eval() {
     evaluating = true;
+}
+
+// STUDENT TODO: IMPLEMENT
+void NeuralNetwork::train() {
+    evaluating = false;
+}
+
+// STUDENT TODO: IMPLEMENT
+void NeuralNetwork::setLearningRate(double lr) {
+    learningRate = lr;
+}
+
+// STUDENT TODO: IMPLEMENT
+void NeuralNetwork::setInputNodeIds(std::vector<int> inputNodeIds) {
+    this->inputNodeIds = inputNodeIds;
+}
+
+// STUDENT TODO: IMPLEMENT
+void NeuralNetwork::setOutputNodeIds(std::vector<int> outputNodeIds) {
+    this->outputNodeIds = outputNodeIds;
+}
+
+// STUDENT TODO: IMPLEMENT
+vector<int> NeuralNetwork::getInputNodeIds() const {
+    return inputNodeIds;
+}
+
+// STUDENT TODO: IMPLEMENT
+vector<int> NeuralNetwork::getOutputNodeIds() const {
+    return outputNodeIds;
+}
+
+// STUDENT TODO: IMPLEMENT
+vector<double> NeuralNetwork::predict(DataInstance instance) {
+
+    vector<double> input = instance.x;
+
+    // error checking : size mismatch
+    if (input.size() != inputNodeIds.size()) {
+        cerr << "input size mismatch." << endl;
+        cerr << "\tNeuralNet expected input size: " << inputNodeIds.size() << endl;
+        cerr << "\tBut got: " << input.size() << endl;
+        return vector<double>();
+    }
+
+    // BFT implementation goes here.
+    // Note: before traversal begins, each input value in `input` must be loaded into
+    // the corresponding input node's postActivationValue. Input nodes are not activated —
+    // their value is passed forward directly.
+    // Use visitPredictNode and visitPredictNeighbor to handle the neural network math
+    // at each step of your traversal.
+
+    queue<int> q;
+    set<int> inputSet;
+    set<int> visited;
+
+    for (int i = 0; i < inputNodeIds.size(); i++) {
+        int id = inputNodeIds.at(i);
+        nodes.at(id)->postActivationValue = input.at(i);
+        inputSet.insert(id);
+        visited.insert(id);
+        q.push(id);
+    }
+
+    while (!q.empty()) {
+        int levelSize = q.size();
+        vector<int> nextLayer;
+        set<int> nextLayerAdded;
+
+        for (int i = 0; i < levelSize; i++) {
+            int current = q.front();
+            q.pop();
+
+            if (inputSet.find(current) == inputSet.end()) {
+                visitPredictNode(current);
+            }
+
+            for (auto neighbor = adjacencyList.at(current).begin(); neighbor != adjacencyList.at(current).end(); neighbor++) {
+                visitPredictNeighbor(neighbor->second);
+
+                int next = neighbor->second.dest;
+                if (visited.find(next) == visited.end() && nextLayerAdded.find(next) == nextLayerAdded.end()) {
+                    nextLayer.push_back(next);
+                    nextLayerAdded.insert(next);
+                }
+            }
+        }
+
+        for (int i = 0; i < nextLayer.size(); i++) {
+            visited.insert(nextLayer.at(i));
+            q.push(nextLayer.at(i));
+        }
+    }
+
+    vector<double> output;
+    for (int i = 0; i < outputNodeIds.size(); i++) {
+        int dest = outputNodeIds.at(i);
+        NodeInfo* outputNode = nodes.at(dest);
+        output.push_back(outputNode->postActivationValue);
+    }
+
+    if (evaluating) {
+        flush();
+    } else {
+        // increment batch size
+        batchSize++;
+        // accumulate derivatives. If in training mode, weights and biases get accumulated
+        contribute(instance.y, output.at(0));
+    }
+    return output;
+}
+// STUDENT TODO: IMPLEMENT
+bool NeuralNetwork::contribute(double y, double p) {
+
+    // DFT implementation goes here.
+    // This function initiates the recursion by calling the recursive helper
+    // starting from each input layer node.
+    // Note: input layer nodes do not have a bias to update, so visitContributeNode
+    // should not be called on them.
+    // The contributions map acts as your "visited" set and also stores each node's
+    // computed contribution so it is not recomputed if reached by multiple paths.
+
+    for (int i = 0; i < inputNodeIds.size(); i++) {
+        int inputNode = inputNodeIds.at(i);
+        double outgoingContribution = 0;
+
+        for (auto neighbor = adjacencyList.at(inputNode).begin(); neighbor != adjacencyList.at(inputNode).end(); neighbor++) {
+            double incomingContribution = contribute(neighbor->second.dest, y, p);
+            visitContributeNeighbor(neighbor->second, incomingContribution, outgoingContribution);
+        }
+    }
+
+    flush();
+
+    return true;
+}
+// STUDENT TODO: IMPLEMENT
+double NeuralNetwork::contribute(int nodeId, const double& y, const double& p) {
+    visitContributeStart(nodeId); // don't remove this line, used for visualization
+    // incomingContribution: the error signal returned by a recursive call on a neighbor.
+    double incomingContribution = 0;
+    // outgoingContribution: built up from this node's neighbors, then scaled by
+    // this node's activation derivative before being returned to the previous layer.
+    double outgoingContribution = 0;
+    NodeInfo* currNode = nodes.at(nodeId);
+
+    // If this node is already in the contributions map, return its stored value immediately.
+    if (contributions.find(nodeId) != contributions.end()) {
+        return contributions.at(nodeId);
+    }
+
+    if (adjacencyList.at(nodeId).empty()) {
+        // Base case: output node (no outgoing connections).
+        // Seeds the backward pass with the initial error signal.
+        // You do not need to understand this derivation.
+        outgoingContribution = -1 * ((y - p) / (p * (1 - p)));
+    } else {
+        for (auto neighbor = adjacencyList.at(nodeId).begin(); neighbor != adjacencyList.at(nodeId).end(); neighbor++) {
+            incomingContribution = contribute(neighbor->second.dest, y, p);
+            visitContributeNeighbor(neighbor->second, incomingContribution, outgoingContribution);
+        }
+    }
+
+    visitContributeNode(nodeId, outgoingContribution);
+
+    // Before returning, store outgoingContribution in the contributions map.
+    contributions.insert({nodeId, outgoingContribution});
+
+    return outgoingContribution;
+}
+// STUDENT TODO: IMPLEMENT
+bool NeuralNetwork::update() {
+    // apply the derivative contributions
+
+    // traverse the graph in anyway you want. 
+    // Each node has a delta term 
+    // Each connection has a delta term
+
+    // use the formulas for each update
+    // bias update: bias = bias - (learningRate * delta)
+    // weight update: weight = weight - (learningRate * delta)
+    // reset the delta term for each node and connection to zero.
+    for (int i = 0; i < nodes.size(); i++) {
+        nodes.at(i)->bias = nodes.at(i)->bias - (learningRate * nodes.at(i)->delta);
+        nodes.at(i)->delta = 0;
+
+        for (auto neighbor = adjacencyList.at(i).begin(); neighbor != adjacencyList.at(i).end(); neighbor++) {
+            neighbor->second.weight = neighbor->second.weight - (learningRate * neighbor->second.delta);
+            neighbor->second.delta = 0;
+        }
+    }
+    
+    flush();
+    return true;
+    
+}
+
+
+
+
+// Feel free to explore the remaining code, but no need to implement past this point
+
+// ----------- YOU DO NOT NEED TO TOUCH THE REMAINING CODE -----------------------------------------------------------------
+// ----------- YOU DO NOT NEED TO TOUCH THE REMAINING CODE -----------------------------------------------------------------
+// ----------- YOU DO NOT NEED TO TOUCH THE REMAINING CODE -----------------------------------------------------------------
+// ----------- YOU DO NOT NEED TO TOUCH THE REMAINING CODE -----------------------------------------------------------------
+// ----------- YOU DO NOT NEED TO TOUCH THE REMAINING CODE -----------------------------------------------------------------
+
+
+
+
+
+
+
+// Constructors
+NeuralNetwork::NeuralNetwork() : Graph(0) {
     learningRate = 0.1;
+    evaluating = false;
     batchSize = 0;
 }
 
 NeuralNetwork::NeuralNetwork(int size) : Graph(size) {
-    evaluating = true;
     learningRate = 0.1;
+    evaluating = false;
     batchSize = 0;
 }
 
-NeuralNetwork::NeuralNetwork(std::string filename) : Graph() {
-    evaluating = true;
-    learningRate = 0.1;
-    batchSize = 0;
-    std::ifstream fin(filename);
-    if (fin.is_open()) {
-        loadNetwork(fin);
-        fin.close();
+NeuralNetwork::NeuralNetwork(string filename) : Graph() {
+    // open file
+    ifstream fin(filename);
+
+    // error check
+    if (fin.fail()) {
+        cerr << "Could not open " << filename << " for reading. " << endl;
+        exit(1);
     }
-}
 
-NeuralNetwork::NeuralNetwork(std::istream& in) : Graph() {
-    evaluating = true;
+    // load network
+    loadNetwork(fin);
     learningRate = 0.1;
+    evaluating = false;
     batchSize = 0;
-    loadNetwork(in);
+
+    // close file
+    fin.close();
 }
 
-// ==================== Getters / Setters ====================
+NeuralNetwork::NeuralNetwork(istream& in) : Graph() {
+    loadNetwork(in);
+    learningRate = 0.1;
+    evaluating = false;
+    batchSize = 0;
+}
 
-const std::vector<std::vector<int>>& NeuralNetwork::getLayers() const {
+const vector<vector<int> >& NeuralNetwork::getLayers() const {
     return layers;
 }
 
-void NeuralNetwork::eval() { evaluating = true; }
-void NeuralNetwork::train() { evaluating = false; }
-void NeuralNetwork::setLearningRate(double lr) { learningRate = lr; }
-void NeuralNetwork::setInputNodeIds(std::vector<int> ids) { inputNodeIds = ids; }
-void NeuralNetwork::setOutputNodeIds(std::vector<int> ids) { outputNodeIds = ids; }
-std::vector<int> NeuralNetwork::getInputNodeIds() const { return inputNodeIds; }
-std::vector<int> NeuralNetwork::getOutputNodeIds() const { return outputNodeIds; }
-
-// ==================== Visit Helpers (Predict) ====================
-
-void NeuralNetwork::visitPredictNode(int vId) {
-    nodes[vId]->preActivationValue += nodes[vId]->bias;
-    nodes[vId]->activate();
-}
-
-void NeuralNetwork::visitPredictNeighbor(Connection c) {
-    nodes[c.dest]->preActivationValue += nodes[c.source]->postActivationValue * c.weight;
-}
-
-// ==================== Visit Helpers (Contribute / Backprop) ====================
-
-void NeuralNetwork::visitContributeStart(int vId) {
-    // no-op
-}
-
-void NeuralNetwork::visitContributeNode(int vId, double& outgoingContribution) {
-    outgoingContribution *= nodes[vId]->derive();
-    nodes[vId]->delta += outgoingContribution;
-}
-
-void NeuralNetwork::visitContributeNeighbor(Connection& c, double& incomingContribution, double& outgoingContribution) {
-    c.delta += incomingContribution * nodes[c.source]->postActivationValue;
-    outgoingContribution += incomingContribution * c.weight;
-}
-
-// ==================== Predict (Forward Pass, BFT) ====================
-
-std::vector<double> NeuralNetwork::predict(DataInstance instance) {
-    flush();
-
-    int n = (int)adjacencyList.size();
-
-    // Set input node values from the data instance.
-    for (size_t i = 0; i < inputNodeIds.size(); i++) {
-        nodes[inputNodeIds[i]]->preActivationValue = instance.x[i];
+void NeuralNetwork::loadNetwork(istream& in) {
+    int numLayers(0), totalNodes(0), numNodes(0), weightModifications(0), biasModifications(0); string activationMethod = "identity";
+    string junk;
+    in >> numLayers; in >> totalNodes; getline(in, junk);
+    if (numLayers <= 1) {
+        cerr << "Neural Network must have at least 2 layers, but got " << numLayers << " layers" << endl;
+        exit(1);
     }
 
-    // Breadth-First Traversal with in-degree tracking so that a node is only
-    // visited (activated) after every incoming connection has contributed,
-    // i.e. only after the previous layer has finished.
-    std::vector<int> inDegree(n, 0);
-    for (int i = 0; i < n; i++) {
-        for (auto it = adjacencyList[i].begin(); it != adjacencyList[i].end(); ++it) {
-            inDegree[it->second.dest]++;
+    // resize network to accomodate expected nodes.
+    resize(totalNodes);
+    this->size = totalNodes;
+
+    int currentNodeId(0);
+
+    vector<int> previousLayer;
+    vector<int> currentLayer;
+    for (int i = 0; i < numLayers; i++) {
+        currentLayer.clear();
+        //  For each layer
+
+        // get nodes for this layer and activation method
+        in >> numNodes; in >> activationMethod; getline(in, junk);
+
+        for (int j = 0; j < numNodes; j++) {
+            // For every node, add a new node to the network with proper activationMethod
+            // initialize bias to 0.
+            updateNode(currentNodeId, NodeInfo(activationMethod, 0, 0));
+            // This node has an id of currentNodeId
+            currentLayer.push_back(currentNodeId++);
         }
-    }
 
-    std::queue<int> q;
-    for (size_t i = 0; i < inputNodeIds.size(); i++) {
-        q.push(inputNodeIds[i]);
-    }
+        if (i != 0) {
+            // There exists a previous layer, now we set out connections
+            for (int k = 0; k < previousLayer.size(); k++) {
+                for (int w = 0; w < currentLayer.size(); w++) {
 
-    std::vector<bool> visited(n, false);
-    while (!q.empty()) {
-        int v = q.front();
-        q.pop();
-        if (visited[v]) continue;
-        visited[v] = true;
-
-        visitPredictNode(v);
-
-        for (auto it = adjacencyList[v].begin(); it != adjacencyList[v].end(); ++it) {
-            visitPredictNeighbor(it->second);
-            int d = it->second.dest;
-            inDegree[d]--;
-            if (inDegree[d] == 0) {
-                q.push(d);
+                    // Initialize an initial weight of a sample from the standard normal distribution
+                    updateConnection(previousLayer.at(k), currentLayer.at(w), sample());
+                }
             }
         }
+
+        // Crawl forward.
+        previousLayer = currentLayer;
+        layers.push_back(currentLayer);
+    }
+    in >> weightModifications; getline(in, junk);
+    int v(0),u(0); double w(0), b(0);
+
+    // load weights by updating connections
+    for (int i = 0; i < weightModifications; i++) {
+        in >> v; in >> u; in >> w; getline(in , junk);
+        updateConnection(v, u, w);
     }
 
-    // Collect outputs.
-    std::vector<double> output;
-    for (size_t i = 0; i < outputNodeIds.size(); i++) {
-        output.push_back(nodes[outputNodeIds[i]]->postActivationValue);
+    in >> biasModifications; getline(in , junk);
+
+    // load biases by updating node info
+    for (int i = 0; i < biasModifications; i++) {
+        in >> v; in >> b; getline(in, junk);
+        NodeInfo* thisNode = getNode(v);
+        thisNode->bias = b;
     }
 
-    // In training mode, run backpropagation to accumulate gradients.
-    if (!evaluating) {
-        contribute(instance.y, output[0]);
-        batchSize++;
-    }
-
-    return output;
+    setInputNodeIds(layers.at(0));
+    setOutputNodeIds(layers.at(layers.size()-1));
 }
 
-// ==================== Contribute (Backpropagation, DFT) ====================
+// visitPredictNode: called when your BFT dequeues a node.
+// It completes the computation for this node by:
+//   1. Adding the bias to the accumulated weighted sum (preActivationValue)
+//   2. Applying the activation function and storing the result in postActivationValue
+// After this call, the node's output value (postActivationValue) is ready to be
+// passed forward to the next layer via visitPredictNeighbor.
+void NeuralNetwork::visitPredictNode(int vId) {
+    // accumulate bias, and activate
+    NodeInfo* v = nodes.at(vId);
+    v->preActivationValue += v->bias;
+    v->activate();
+    // visualization use
+    if (viz::isTracing()) {
+        viz::traceNodeState(0, "forward", vId,
+                            v->preActivationValue,
+                            v->postActivationValue,
+                            v->bias,
+                            v->delta,
+                            "current");
+    }
+}
 
-bool NeuralNetwork::contribute(double y, double p) {
+// visitPredictNeighbor: called for each outgoing connection from a dequeued node.
+// It accumulates one term of the weighted sum into the destination node:
+//   dest.preActivationValue += source.postActivationValue * weight
+// This must be called for ALL incoming connections to a node before
+// visitPredictNode is called on that node — which is why BFT is required:
+// it ensures a whole layer's outputs are ready before the next layer is processed.
+void NeuralNetwork::visitPredictNeighbor(Connection c) {
+    NodeInfo* v = nodes.at(c.source);
+    NodeInfo* u = nodes.at(c.dest);
+    double w = c.weight;
+    u->preActivationValue += v->postActivationValue * w;
+    // visualization use
+    if (viz::isTracing()) {
+        viz::traceEdgeState(0, "forward",
+                            c.source,
+                            c.dest,
+                            c.weight,
+                            c.delta);
+        viz::traceNodeState(0, "forward", c.dest,
+                            u->preActivationValue,
+                            u->postActivationValue,
+                            u->bias,
+                            u->delta,
+                            "neighbor");
+    }
+}
+
+// visitContributeStart: called at the start of the contribution step for a node.
+void NeuralNetwork::visitContributeStart(int vId) {
+    NodeInfo* v = nodes.at(vId);
+    // visualization use
+    if (viz::isTracing()) {
+        viz::traceNodeState(0, "backward", vId,
+                            v->preActivationValue,
+                            v->postActivationValue,
+                            v->bias,
+                            v->delta,
+                            "stack");
+    }
+}
+// visitContributeNode: called after all neighbors of a node have been visited during DFT.
+// outgoingContribution at this point holds the sum of weighted incoming contributions
+// from the next layer. This function:
+//   1. Multiplies outgoingContribution by the activation derivative at this node
+//      (chain rule: how much did this node's activation affect the error?)
+//   2. Accumulates that result into the node's delta (gradient for its bias)
+// After this call, outgoingContribution holds the value to be passed back to
+// the previous layer as their incomingContribution.
+void NeuralNetwork::visitContributeNode(int vId, double& outgoingContribution) {
+    NodeInfo* v = nodes.at(vId);
+    outgoingContribution *= v->derive();
+
+    //contribute bias derivative
+    v->delta += outgoingContribution;
+    // visualization use
+    if (viz::isTracing()) {
+        viz::traceNodeState(0, "backward", vId,
+                            v->preActivationValue,
+                            v->postActivationValue,
+                            v->bias,
+                            v->delta,
+                            "current");
+    }
+}
+
+// visitContributeNeighbor: called for each outgoing connection during DFT, before visitContributeNode.
+// incomingContribution is the contribution returned by the recursive call on the neighbor (next layer).
+// This function:
+//   1. Adds weight * incomingContribution to outgoingContribution
+//      (this node's share of the error flowing back from the neighbor)
+//   2. Accumulates the weight gradient into c.delta
+//      (how much should this weight change? proportional to incomingContribution * this node's output)
+void NeuralNetwork::visitContributeNeighbor(Connection& c, double& incomingContribution, double& outgoingContribution) {
+    NodeInfo* v = nodes.at(c.source);
+    // update outgoingContribution
+    outgoingContribution += c.weight * incomingContribution;
+
+    // accumulate weight derivative
+    c.delta += incomingContribution * v->postActivationValue;
+    // visualization use
+    if (viz::isTracing()) {
+        viz::traceEdgeState(0, "backward",
+                            c.source,
+                            c.dest,
+                            c.weight,
+                            c.delta);
+        viz::traceNodeState(0, "backward", c.source,
+                            v->preActivationValue,
+                            v->postActivationValue,
+                            v->bias,
+                            v->delta,
+                            "neighbor");
+    }
+}
+
+void NeuralNetwork::flush() {
+    // set every node value to 0 to refresh computation.
+    for (int i = 0; i < nodes.size(); i++) {
+        nodes.at(i)->postActivationValue = 0;
+        nodes.at(i)->preActivationValue = 0;
+    }
     contributions.clear();
-    for (size_t i = 0; i < inputNodeIds.size(); i++) {
-        contribute(inputNodeIds[i], y, p);
-    }
-    return true;
-}
-
-double NeuralNetwork::contribute(int nodeId, const double& y, const double& p) {
-    // contributions doubles as the "visited" set and memoizes results.
-    if (contributions.find(nodeId) != contributions.end()) {
-        return contributions[nodeId];
-    }
-
-    visitContributeStart(nodeId);
-
-    double outgoingContribution = 0;
-
-    if (adjacencyList[nodeId].empty()) {
-        // Output node: base case. With a sigmoid output under cross-entropy,
-        // the gradient w.r.t. the pre-activation simplifies to (p - y).
-        outgoingContribution = p - y;
-        nodes[nodeId]->delta += outgoingContribution;
-    } else {
-        // Recurse forward to each neighbor, accumulating gradients on the way back.
-        for (auto it = adjacencyList[nodeId].begin(); it != adjacencyList[nodeId].end(); ++it) {
-            double incomingContribution = contribute(it->second.dest, y, p);
-            visitContributeNeighbor(it->second, incomingContribution, outgoingContribution);
-        }
-        // Apply this node's activation derivative and record its bias gradient,
-        // but only for non-input nodes (input nodes have no trainable bias).
-        bool isInput = std::find(inputNodeIds.begin(), inputNodeIds.end(), nodeId) != inputNodeIds.end();
-        if (isInput) {
-            outgoingContribution *= nodes[nodeId]->derive();
-        } else {
-            visitContributeNode(nodeId, outgoingContribution);
-        }
-    }
-
-    contributions[nodeId] = outgoingContribution;
-    return outgoingContribution;
-}
-
-// ==================== Update ====================
-
-bool NeuralNetwork::update() {
-    if (batchSize == 0) return false;
-
-    for (int i = 0; i < (int)nodes.size(); i++) {
-        if (nodes[i] != nullptr) {
-            nodes[i]->bias -= learningRate * nodes[i]->delta;
-            nodes[i]->delta = 0;
-        }
-    }
-
-    for (int i = 0; i < (int)adjacencyList.size(); i++) {
-        for (auto it = adjacencyList[i].begin(); it != adjacencyList[i].end(); ++it) {
-            it->second.weight -= learningRate * it->second.delta;
-            it->second.delta = 0;
-        }
-    }
-
     batchSize = 0;
-    return true;
 }
 
-// ==================== Assess ====================
-
-double NeuralNetwork::assess(DataLoader dl) {
-    bool wasTraining = !evaluating;
-    eval();
-
-    int correct = 0;
-    std::vector<DataInstance> data = dl.getData();
-
-    for (size_t i = 0; i < data.size(); i++) {
-        std::vector<double> prediction = predict(data[i]);
-        int predictedLabel = (prediction[0] >= 0.5) ? 1 : 0;
-        if (predictedLabel == data[i].y) {
-            correct++;
-        }
-    }
-
-    if (wasTraining) train();
-
-    return (double)correct / data.size();
-}
-
-double NeuralNetwork::assess(std::string filename) {
+double NeuralNetwork::assess(string filename) {
     DataLoader dl(filename);
     return assess(dl);
 }
 
-// ==================== Flush ====================
-
-void NeuralNetwork::flush() {
-    for (int i = 0; i < (int)nodes.size(); i++) {
-        if (nodes[i] != nullptr) {
-            nodes[i]->preActivationValue = 0;
-            nodes[i]->postActivationValue = 0;
+double NeuralNetwork::assess(DataLoader dl) {
+    bool stateBefore = evaluating;
+    evaluating = true;
+    double count(0);
+    double correct(0);
+    vector<double> output;
+    for (int i = 0; i < dl.getData().size(); i++) {
+        DataInstance di = dl.getData().at(i);
+        output = predict(di);
+        if (static_cast<int>(round(output.at(0))) == di.y) {
+            correct++;
         }
+        count++;
     }
+
+    if (dl.getData().empty()) {
+        cerr << "Cannot assess accuracy on an empty dataset" << endl;
+        exit(1);
+    }
+    evaluating = stateBefore;
+    return correct / count;
 }
 
-// ==================== File I/O ====================
 
-void NeuralNetwork::loadNetwork(std::istream& in) {
-    // Read the whole stream into whitespace-separated tokens, stripping '#'
-    // comments. This is robust against any operator>> / getline interaction.
-    std::vector<std::string> tokens;
-    std::string line;
-    while (std::getline(in, line)) {
-        std::size_t hashPos = line.find('#');
-        if (hashPos != std::string::npos) {
-            line = line.substr(0, hashPos);
-        }
-        std::istringstream iss(line);
-        std::string tok;
-        while (iss >> tok) {
-            tokens.push_back(tok);
-        }
-    }
+void NeuralNetwork::saveModel(string filename) {
+    ofstream fout(filename);
+    
+    fout << layers.size() << " " << getNodes().size() << endl;
+    for (int i = 0; i < layers.size(); i++) {
+        NodeInfo* layerNode = getNodes().at(layers.at(i).at(0));
+        string activationType = getActivationIdentifier(layerNode->activationFunction);
 
-    std::size_t idx = 0;
-
-    int numLayers = std::stoi(tokens[idx++]);
-    int numNodes = std::stoi(tokens[idx++]);
-
-    // Call spec-defined resize, then directly enforce correct state as a safety
-    // net in case the grader's Graph.cpp resize doesn't set the size member
-    // or doesn't resize one of the vectors (which would cause updateConnection
-    // to silently drop all edges for models with 0 biases).
-    resize(numNodes);
-    size = numNodes;
-    if ((int)nodes.size() != numNodes)
-        nodes.assign(numNodes, nullptr);
-    if ((int)adjacencyList.size() != numNodes)
-        adjacencyList.assign(numNodes, std::unordered_map<int, Connection>());
-
-    layers.assign(numLayers, std::vector<int>());
-    int nodeId = 0;
-    for (int l = 0; l < numLayers; l++) {
-        int layerSize = std::stoi(tokens[idx++]);
-        std::string activation = tokens[idx++];
-        for (int j = 0; j < layerSize; j++) {
-            updateNode(nodeId, NodeInfo(activation, 0, 0));
-            layers[l].push_back(nodeId);
-            nodeId++;
-        }
-    }
-
-    inputNodeIds = layers.front();
-    outputNodeIds = layers.back();
-
-    int numWeights = std::stoi(tokens[idx++]);
-    for (int i = 0; i < numWeights; i++) {
-        int src = std::stoi(tokens[idx++]);
-        int dst = std::stoi(tokens[idx++]);
-        double w = std::stod(tokens[idx++]);
-        updateConnection(src, dst, w);
-    }
-
-    if (idx < tokens.size()) {
-        int numBiases = std::stoi(tokens[idx++]);
-        for (int i = 0; i < numBiases && idx + 1 <= tokens.size(); i++) {
-            int nId = std::stoi(tokens[idx++]);
-            double b = std::stod(tokens[idx++]);
-            if (nId >= 0 && nId < numNodes && nodes[nId] != nullptr) {
-                nodes[nId]->bias = b;
-            }
-        }
-    }
-
-    // Activate every node so postActivation reflects activation(0)
-    // (e.g. a sigmoid output node reads a = 0.5 before any prediction).
-    for (int i = 0; i < numNodes; i++) {
-        if (nodes[i] != nullptr) {
-            nodes[i]->activate();
-        }
-    }
-}
-
-void NeuralNetwork::saveModel(std::string filename) {
-    std::ofstream fout(filename);
-    if (!fout.is_open()) return;
-
-    fout << layers.size() << " " << nodes.size() << std::endl;
-    for (size_t l = 0; l < layers.size(); l++) {
-        std::string activation = getActivationIdentifier(nodes[layers[l][0]]->activationFunction);
-        fout << layers[l].size() << " " << activation << std::endl;
+        fout << layers.at(i).size() << " " << activationType << endl;
     }
 
     int numWeights = 0;
-    for (size_t i = 0; i < adjacencyList.size(); i++) numWeights += adjacencyList[i].size();
-    fout << numWeights << std::endl;
-    for (size_t i = 0; i < adjacencyList.size(); i++) {
-        for (auto it = adjacencyList[i].begin(); it != adjacencyList[i].end(); ++it) {
-            fout << it->second.source << " " << it->second.dest << " " << it->second.weight << std::endl;
+    int numBias = 0;
+    stringstream weightStream;
+    stringstream biasStream;
+    for (int i = 0; i < nodes.size(); i++) {
+        numBias++;
+        biasStream << i << " " << nodes.at(i)->bias << endl;
+
+        for (auto j = adjacencyList.at(i).begin(); j != adjacencyList.at(i).end(); j++) {
+            numWeights++;
+            weightStream << j->second.source << " " << j->second.dest << " " << j->second.weight << endl;
         }
     }
 
-    std::vector<std::pair<int, double>> biases;
-    for (size_t i = 0; i < nodes.size(); i++) {
-        if (nodes[i] != nullptr && std::abs(nodes[i]->bias) > 0.00001) {
-            biases.push_back({(int)i, nodes[i]->bias});
-        }
-    }
-    fout << biases.size() << std::endl;
-    for (auto& b : biases) {
-        fout << b.first << " " << b.second << std::endl;
-    }
+    fout << numWeights << endl;
+    fout << weightStream.str();
+    fout << numBias << endl;
+    fout << biasStream.str();
+
     fout.close();
+
+
 }
 
-// ==================== operator<< ====================
-
-std::ostream& operator<<(std::ostream& out, const NeuralNetwork& nn) {
-    // Layer structure (trailing space after each id, matching expected output).
-    for (size_t l = 0; l < nn.layers.size(); l++) {
-        out << "layer " << l << ": ";
-        for (size_t k = 0; k < nn.layers[l].size(); k++) {
-            out << nn.layers[l][k] << " ";
+ostream& operator<<(ostream& out, const NeuralNetwork& nn) {
+    for (int i = 0; i < nn.layers.size(); i++) {
+        out << "layer " << i << ": ";
+        for (int j = 0; j < nn.layers.at(i).size(); j++) {
+            out << nn.layers.at(i).at(j) << " ";
         }
-        out << std::endl;
+        out << endl;
     }
-
-    // DOT digraph; edges sorted by destination descending, each indented by a tab.
-    out << "digraph G {" << std::endl;
-    for (size_t i = 0; i < nn.adjacencyList.size(); i++) {
-        std::vector<Connection> edges;
-        for (auto it = nn.adjacencyList[i].begin(); it != nn.adjacencyList[i].end(); ++it) {
-            edges.push_back(it->second);
-        }
-        std::sort(edges.begin(), edges.end(), [](const Connection& a, const Connection& b) {
-            return a.dest > b.dest;
-        });
-        for (size_t e = 0; e < edges.size(); e++) {
-            out << "\t" << edges[e].source << " -> " << edges[e].dest
-                << "[label=\"" << edges[e].weight << "\"]" << std::endl;
-        }
-    }
-    out << "}" << std::endl;
-
-    // Node details.
-    for (size_t i = 0; i < nn.nodes.size(); i++) {
-        out << "node " << i << ": (z=";
-        if (nn.nodes[i] != nullptr) {
-            out << nn.nodes[i]->preActivationValue
-                << "\t, a=" << nn.nodes[i]->postActivationValue
-                << "\t, bias=" << nn.nodes[i]->bias
-                << "\t, activation=" << getActivationIdentifier(nn.nodes[i]->activationFunction);
-        }
-        out << ")" << std::endl;
-    }
-
+    // outputs the nn in dot format
+    out << static_cast<const Graph&>(nn) << endl;
     return out;
 }
