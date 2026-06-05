@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <iomanip>
 #include <queue>
+#include <sstream>
+#include <string>
+#include <vector>
 
 // ==================== Constructors ====================
 
@@ -254,22 +257,37 @@ void NeuralNetwork::flush() {
 // ==================== File I/O ====================
 
 void NeuralNetwork::loadNetwork(std::istream& in) {
+    // Read the entire file into a flat list of whitespace-separated tokens,
+    // stripping any '#' comments. This is immune to stream-state quirks that
+    // can arise from mixing operator>> and getline across stdlib versions.
+    std::vector<std::string> tokens;
     std::string line;
+    while (std::getline(in, line)) {
+        std::size_t hashPos = line.find('#');
+        if (hashPos != std::string::npos) {
+            line = line.substr(0, hashPos);
+        }
+        std::istringstream iss(line);
+        std::string tok;
+        while (iss >> tok) {
+            tokens.push_back(tok);
+        }
+    }
 
-    int numLayers, numNodes;
-    in >> numLayers >> numNodes;
-    std::getline(in, line);
+    std::size_t idx = 0;
+
+    // numLayers numNodes
+    int numLayers = std::stoi(tokens[idx++]);
+    int numNodes = std::stoi(tokens[idx++]);
 
     resize(numNodes);
 
-    layers.resize(numLayers);
+    // Per layer: layerSize activationFunction
+    layers.assign(numLayers, std::vector<int>());
     int nodeId = 0;
     for (int l = 0; l < numLayers; l++) {
-        int layerSize;
-        std::string activation;
-        in >> layerSize >> activation;
-        std::getline(in, line);
-
+        int layerSize = std::stoi(tokens[idx++]);
+        std::string activation = tokens[idx++];
         for (int j = 0; j < layerSize; j++) {
             NodeInfo n(activation, 0, 0);
             updateNode(nodeId, n);
@@ -278,32 +296,27 @@ void NeuralNetwork::loadNetwork(std::istream& in) {
         }
     }
 
-    inputNodeIds = layers[0];
-    outputNodeIds = layers[numLayers - 1];
+    inputNodeIds = layers.front();
+    outputNodeIds = layers.back();
 
-    int numWeights;
-    in >> numWeights;
-    std::getline(in, line);
-
+    // numWeights, then src dest weight triples
+    int numWeights = std::stoi(tokens[idx++]);
     for (int i = 0; i < numWeights; i++) {
-        int src, dst;
-        double w;
-        in >> src >> dst >> w;
-        std::getline(in, line);
+        int src = std::stoi(tokens[idx++]);
+        int dst = std::stoi(tokens[idx++]);
+        double w = std::stod(tokens[idx++]);
         updateConnection(src, dst, w);
     }
 
-    int numBiases;
-    in >> numBiases;
-    std::getline(in, line);
-
-    for (int i = 0; i < numBiases; i++) {
-        int nId;
-        double b;
-        in >> nId >> b;
-        std::getline(in, line);
-        if (nId >= 0 && nId < numNodes && nodes[nId]) {
-            nodes[nId]->bias = b;
+    // numBiases, then nodeId bias pairs (may be 0 / absent)
+    if (idx < tokens.size()) {
+        int numBiases = std::stoi(tokens[idx++]);
+        for (int i = 0; i < numBiases && idx + 1 < tokens.size() + 2; i++) {
+            int nId = std::stoi(tokens[idx++]);
+            double b = std::stod(tokens[idx++]);
+            if (nId >= 0 && nId < numNodes && nodes[nId]) {
+                nodes[nId]->bias = b;
+            }
         }
     }
 
