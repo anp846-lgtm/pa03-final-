@@ -8,19 +8,19 @@
 
 NeuralNetwork::NeuralNetwork() : Graph() {
     evaluating = true;
-    learningRate = 1.0;
+    learningRate = 0.1;
     batchSize = 0;
 }
 
 NeuralNetwork::NeuralNetwork(int size) : Graph(size) {
     evaluating = true;
-    learningRate = 1.0;
+    learningRate = 0.1;
     batchSize = 0;
 }
 
 NeuralNetwork::NeuralNetwork(std::string filename) : Graph() {
     evaluating = true;
-    learningRate = 1.0;
+    learningRate = 0.1;
     batchSize = 0;
     std::ifstream fin(filename);
     if (fin.is_open()) {
@@ -31,7 +31,7 @@ NeuralNetwork::NeuralNetwork(std::string filename) : Graph() {
 
 NeuralNetwork::NeuralNetwork(std::istream& in) : Graph() {
     evaluating = true;
-    learningRate = 1.0;
+    learningRate = 0.1;
     batchSize = 0;
     loadNetwork(in);
 }
@@ -175,17 +175,29 @@ double NeuralNetwork::contribute(int nodeId, const double& y, const double& p) {
     double outgoing = 0;
 
     if (adjacencyList[nodeId].empty()) {
-        // Output node: initial gradient is (prediction - label)
+        // Output node: with a sigmoid output and binary cross-entropy loss,
+        // the gradient of the loss with respect to the pre-activation value
+        // simplifies exactly to (prediction - label). We must NOT multiply by
+        // the activation derivative again here.
         outgoing = p - y;
+        nodes[nodeId]->delta += outgoing;
     } else {
-        // Hidden or input node: recurse into neighbors
+        // Hidden or input node: recurse into neighbors, accumulating each
+        // connection's weight gradient and this node's incoming gradient.
         for (auto& pair : adjacencyList[nodeId]) {
             double incoming = contribute(pair.second.dest, y, p);
             visitContributeNeighbor(pair.second, incoming, outgoing);
         }
+        // Chain rule through this node's activation function.
+        outgoing *= nodes[nodeId]->derive();
+        // Input nodes only hold the data instance's feature values; their bias
+        // is not a trainable parameter, so they do not accumulate a gradient.
+        bool isInput = std::find(inputNodeIds.begin(), inputNodeIds.end(),
+                                 nodeId) != inputNodeIds.end();
+        if (!isInput) {
+            nodes[nodeId]->delta += outgoing;
+        }
     }
-
-    visitContributeNode(nodeId, outgoing);
 
     contributions[nodeId] = outgoing;
     return outgoing;
@@ -199,7 +211,7 @@ bool NeuralNetwork::update() {
     // Update biases
     for (int i = 0; i < size; i++) {
         if (nodes[i]) {
-            nodes[i]->bias -= learningRate * (nodes[i]->delta / batchSize);
+            nodes[i]->bias -= learningRate * nodes[i]->delta;
             nodes[i]->delta = 0;
         }
     }
@@ -207,7 +219,7 @@ bool NeuralNetwork::update() {
     // Update weights
     for (int i = 0; i < size; i++) {
         for (auto& pair : adjacencyList[i]) {
-            pair.second.weight -= learningRate * (pair.second.delta / batchSize);
+            pair.second.weight -= learningRate * pair.second.delta;
             pair.second.delta = 0;
         }
     }
@@ -371,9 +383,9 @@ void NeuralNetwork::saveModel(std::string filename) {
 std::ostream& operator<<(std::ostream& out, const NeuralNetwork& nn) {
     // Print layer structure
     for (size_t l = 0; l < nn.layers.size(); l++) {
-        out << "layer " << l << ":";
+        out << "layer " << l << ": ";
         for (size_t n = 0; n < nn.layers[l].size(); n++) {
-            out << " " << nn.layers[l][n];
+            out << nn.layers[l][n] << " ";
         }
         out << std::endl;
     }
@@ -390,7 +402,7 @@ std::ostream& operator<<(std::ostream& out, const NeuralNetwork& nn) {
             return a.dest > b.dest;
         });
         for (auto& c : edges) {
-            out << c.source << " -> " << c.dest
+            out << "\t" << c.source << " -> " << c.dest
                 << "[label=\"" << c.weight << "\"]" << std::endl;
         }
     }
