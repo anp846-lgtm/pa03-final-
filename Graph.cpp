@@ -15,7 +15,7 @@ NodeInfo::NodeInfo(std::string activationFunc, double value, double b) {
     activationFunction = getActivationFunction(activationFunc);
     activationDerivative = getActivationDerivative(activationFunc);
     preActivationValue = value;
-    postActivationValue = value;
+    postActivationValue = activationFunction(value);
     bias = b;
     delta = 0;
 }
